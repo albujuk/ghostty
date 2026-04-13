@@ -250,6 +250,11 @@ pub const Uniforms = extern struct {
         /// with linear alpha blending have a similar apparent weight
         /// (thickness) to gamma-incorrect blending.
         use_linear_correction: bool align(1) = false,
+
+        /// True when blinking text (SGR 5/6) should currently be visible.
+        /// Toggled by the text blink timer. Glyphs with the IS_BLINK bit
+        /// set in their bools will be hidden when this is false.
+        text_blink_visible: bool align(1) = true,
     },
 
     const PaddingExtend = packed struct(u8) {
@@ -272,7 +277,11 @@ pub const CellText = extern struct {
     bools: packed struct(u8) {
         no_min_contrast: bool = false,
         is_cursor_glyph: bool = false,
-        _padding: u6 = 0,
+        /// Set when this glyph belongs to a cell with SGR blink (5 or 6).
+        /// The shader uses the TEXT_BLINK_VISIBLE uniform to decide whether
+        /// to make this glyph invisible during the "off" half of the cycle.
+        blink: bool = false,
+        _padding: u5 = 0,
     } align(1) = .{},
 
     pub const Atlas = enum(u8) {

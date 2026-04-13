@@ -176,6 +176,11 @@ search: ?Search = null,
 /// Used to rate limit BEL handling.
 last_bell_time: ?std.time.Instant = null,
 
+/// Last time we sent a reset_cursor_blink message to the renderer. This is
+/// used to throttle the rate we send these so we don't flood the mailbox
+/// during autorepeat.
+last_cursor_reset: ?std.time.Instant = null,
+
 /// The effect of an input event. This can be used by callers to take
 /// the appropriate action after an input event. For example, key
 /// input can be forwarded to the OS for further processing if it
@@ -2788,6 +2793,22 @@ pub fn keyCallback(
             .stable => |v| .{ .write_stable = v },
             .alloc => |v| .{ .write_alloc = v },
         }, .unlocked);
+
+        // Notify the renderer to keep the cursor visible for at least one
+        // blink interval. We throttle this to avoid flooding the mailbox
+        // during autorepeat.
+        if (std.time.Instant.now()) |now| reset: {
+            if (self.last_cursor_reset) |last| {
+                if (now.since(last) <= (500 * std.time.ns_per_ms)) {
+                    break :reset;
+                }
+            }
+            self.last_cursor_reset = now;
+            _ = self.renderer_thread.mailbox.push(
+                .{ .reset_cursor_blink = {} },
+                .{ .instant = {} },
+            );
+        } else |_| {}
     } else {
         // No valid request means that we didn't encode anything.
         return .ignored;

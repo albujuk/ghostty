@@ -24,6 +24,10 @@ struct Uniforms {
   bool use_display_p3;
   bool use_linear_blending;
   bool use_linear_correction;
+  /// True when blinking text (SGR 5/6) should currently be visible.
+  /// Toggled by the text blink timer. Glyphs with IS_BLINK set will be
+  /// hidden (alpha = 0) when this is false.
+  bool text_blink_visible;
 };
 
 //-------------------------------------------------------------------
@@ -520,6 +524,9 @@ enum CellTextBools : uint8_t {
   NO_MIN_CONTRAST = 1u,
   // This is the cursor glyph.
   IS_CURSOR_GLYPH = 2u,
+  // This glyph has the SGR blink attribute (SGR 5 or 6). The shader
+  // hides it (alpha = 0) when uniforms.text_blink_visible is false.
+  IS_BLINK = 4u,
 };
 
 struct CellTextVertexIn {
@@ -670,6 +677,16 @@ vertex CellTextVertexOut cell_text_vertex(
       uniforms.use_display_p3,
       true
     );
+  }
+
+  // If this glyph has the blink attribute (SGR 5/6) and the blink timer
+  // says it should currently be invisible, zero out the entire color
+  // (premultiplied form of alpha=0) so it disappears without requiring a
+  // CPU-side cell buffer rebuild. We zero all channels, not just alpha,
+  // because the fragment shader divides rgb/alpha for gamma correction and
+  // a non-zero rgb with zero alpha would produce NaN/Inf there.
+  if ((in.bools & IS_BLINK) != 0 && !uniforms.text_blink_visible) {
+    out.color = float4(0.0);
   }
 
   return out;

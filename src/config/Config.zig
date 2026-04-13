@@ -892,6 +892,46 @@ palette: Palette = .{},
 ///   * `false`
 @"cursor-style-blink": ?bool = null,
 
+/// The interval at which the cursor and blinking text (SGR 5 and SGR 6)
+/// toggle their visibility. This is the half-period of a full on/off cycle:
+/// at the default of 600 ms the cursor (if blinking) and any SGR-blinking
+/// text will be visible for 600 ms and then hidden for 600 ms, giving a 1.2 s
+/// full cycle.
+///
+/// The cursor and blinking text are enabled by separate mechanisms — the
+/// cursor by `cursor-style-blink` / `DECSCUSR` / DEC mode 12, and blinking
+/// text by SGR 5 and 6 — but both use this value for their blink rate.
+///
+/// The duration is specified as a series of numbers followed by time units.
+/// Whitespace is allowed between numbers and units. Each number and unit will
+/// be added together to form the total duration.
+///
+/// The allowed time units are as follows:
+///
+///   * `y` - 365 SI days, or 8760 hours, or 31536000 seconds. No adjustments
+///     are made for leap years or leap seconds.
+///   * `d` - one SI day, or 86400 seconds.
+///   * `h` - one hour, or 3600 seconds.
+///   * `m` - one minute, or 60 seconds.
+///   * `s` - one second.
+///   * `ms` - one millisecond, or 0.001 second.
+///   * `us` or `µs` - one microsecond, or 0.000001 second.
+///   * `ns` - one nanosecond, or 0.000000001 second.
+///
+/// Examples:
+///   * `600ms` (default)
+///   * `1s`
+///
+/// Units can be repeated and will be added together. This means that
+/// `1h1h` is equivalent to `2h`. This is confusing and should be avoided.
+/// A future update may disallow this.
+///
+/// The maximum value is `584y 49w 23h 34m 33s 709ms 551µs 615ns`. Any
+/// value larger than this will be clamped to the maximum value.
+///
+/// Available since 1.3.0
+@"blink-interval": Duration = .{ .duration = 600 * std.time.ns_per_ms },
+
 /// The color of the text under the cursor. If this is not set, a default will
 /// be chosen.
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.

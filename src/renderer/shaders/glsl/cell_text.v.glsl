@@ -28,6 +28,7 @@ const uint ATLAS_COLOR = 1u;
 // Masks for the `glyph_bools` attribute
 const uint NO_MIN_CONTRAST = 1u;
 const uint IS_CURSOR_GLYPH = 2u;
+const uint IS_BLINK = 4u;
 
 out CellTextVertexOut {
     flat uint atlas;
@@ -142,5 +143,15 @@ void main() {
     // the cursor glyph itself, then we need to change the color.
     if ((glyph_bools & IS_CURSOR_GLYPH) == 0 && is_cursor_pos) {
         out_data.color = load_color(unpack4u8(cursor_color_packed_4u8), use_linear_blending);
+    }
+
+    // If this glyph has the blink attribute (SGR 5/6) and the blink timer
+    // says it should currently be invisible, zero out the entire color
+    // (premultiplied form of alpha=0) so it disappears without requiring a
+    // CPU-side cell buffer rebuild. We zero all channels, not just alpha,
+    // because the fragment shader divides rgb/alpha for gamma correction and
+    // a non-zero rgb with zero alpha would produce NaN/Inf there.
+    if ((glyph_bools & IS_BLINK) != 0u && (bools & TEXT_BLINK_VISIBLE) == 0u) {
+        out_data.color = vec4(0.0);
     }
 }

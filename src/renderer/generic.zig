@@ -1124,6 +1124,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self: *Self,
             state: *renderer.State,
             cursor_blink_visible: bool,
+            text_blink_visible: bool,
         ) Allocator.Error!void {
             // const start = std.time.Instant.now() catch unreachable;
             // const start_micro = std.time.microTimestamp();
@@ -1359,6 +1360,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             {
                 self.draw_mutex.lock();
                 defer self.draw_mutex.unlock();
+
+                // Update the text blink visibility uniform so blinking text
+                // glyphs (SGR 5/6) can be toggled by the shader without
+                // requiring a full cell rebuild.
+                self.uniforms.bools.text_blink_visible = text_blink_visible;
 
                 // Build our GPU cells
                 self.rebuildCells(
@@ -2952,6 +2958,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     underline,
                     style.underlineColor(&state.colors.palette) orelse fg,
                     alpha,
+                    style.flags.blink,
                 ) catch |err| {
                     log.warn(
                         "error adding underline to cell, will be invalid x={} y={}, err={}",
@@ -2959,7 +2966,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     );
                 };
 
-                if (style.flags.overline) self.addOverline(@intCast(x), @intCast(y), fg, alpha) catch |err| {
+                if (style.flags.overline) self.addOverline(@intCast(x), @intCast(y), fg, alpha, style.flags.blink) catch |err| {
                     log.warn(
                         "error adding overline to cell, will be invalid x={} y={}, err={}",
                         .{ x, y, err },
@@ -3031,6 +3038,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                             shaper_run.?,
                             fg,
                             alpha,
+                            style.flags.blink,
                         ) catch |err| {
                             log.warn(
                                 "error adding glyph to cell, will be invalid x={} y={}, err={}",
@@ -3046,6 +3054,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     @intCast(y),
                     fg,
                     alpha,
+                    style.flags.blink,
                 ) catch |err| {
                     log.warn(
                         "error adding strikethrough to cell, will be invalid x={} y={}, err={}",
@@ -3063,6 +3072,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             style: terminal.Attribute.Underline,
             color: terminal.color.RGB,
             alpha: u8,
+            blink: bool,
         ) !void {
             const sprite: font.Sprite = switch (style) {
                 .none => unreachable,
@@ -3085,6 +3095,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             try self.cells.add(self.alloc, .underline, .{
                 .atlas = .grayscale,
+                .bools = .{ .blink = blink },
                 .grid_pos = .{ @intCast(x), @intCast(y) },
                 .color = .{ color.r, color.g, color.b, alpha },
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
@@ -3103,6 +3114,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             y: terminal.size.CellCountInt,
             color: terminal.color.RGB,
             alpha: u8,
+            blink: bool,
         ) !void {
             const render = try self.font_grid.renderGlyph(
                 self.alloc,
@@ -3116,6 +3128,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             try self.cells.add(self.alloc, .overline, .{
                 .atlas = .grayscale,
+                .bools = .{ .blink = blink },
                 .grid_pos = .{ @intCast(x), @intCast(y) },
                 .color = .{ color.r, color.g, color.b, alpha },
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
@@ -3134,6 +3147,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             y: terminal.size.CellCountInt,
             color: terminal.color.RGB,
             alpha: u8,
+            blink: bool,
         ) !void {
             const render = try self.font_grid.renderGlyph(
                 self.alloc,
@@ -3147,6 +3161,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             try self.cells.add(self.alloc, .strikethrough, .{
                 .atlas = .grayscale,
+                .bools = .{ .blink = blink },
                 .grid_pos = .{ @intCast(x), @intCast(y) },
                 .color = .{ color.r, color.g, color.b, alpha },
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
@@ -3169,6 +3184,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             shaper_run: font.shape.TextRun,
             color: terminal.color.RGB,
             alpha: u8,
+            blink: bool,
         ) !void {
             const cell = cell_raws[x];
             const cp = cell.codepoint();
@@ -3209,7 +3225,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .emoji => .color,
                     .text => .grayscale,
                 },
-                .bools = .{ .no_min_contrast = noMinContrast(cp) },
+                .bools = .{ .no_min_contrast = noMinContrast(cp), .blink = blink },
                 .grid_pos = .{ @intCast(x), @intCast(y) },
                 .color = .{ color.r, color.g, color.b, alpha },
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
@@ -3346,9 +3362,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             });
 
             // Add underline
-            try self.addUnderline(@intCast(coord.x), @intCast(coord.y), .single, screen_fg, 255);
+            try self.addUnderline(@intCast(coord.x), @intCast(coord.y), .single, screen_fg, 255, false);
             if (cp.wide and coord.x < self.cells.size.columns - 1) {
-                try self.addUnderline(@intCast(coord.x + 1), @intCast(coord.y), .single, screen_fg, 255);
+                try self.addUnderline(@intCast(coord.x + 1), @intCast(coord.y), .single, screen_fg, 255, false);
             }
         }
 

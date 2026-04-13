@@ -409,7 +409,10 @@ fn drainMailbox(self: *Thread) !void {
                 self.syncDrawTimer();
 
                 if (!v) {
-                    // If we're not focused, stop the shared blink timer.
+                    // If we're not focused, stop the shared blink timer and
+                    // ensure blinking text stays visible (cursor logic is
+                    // handled separately via setFocus/renderer).
+                    self.flags.text_blink_visible = true;
                     if (self.blink_c.state() == .active and
                         self.blink_c_cancel.state() == .dead)
                     {
